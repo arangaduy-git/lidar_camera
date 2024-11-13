@@ -32,7 +32,8 @@ def main():
     frame_width = int(cam.get(cv2.CAP_PROP_FRAME_WIDTH))
     xyxy_opr = [40, 67, 564, 423]
     model = YOLO('yolov8s.pt')
-
+    new_frame_time = 0
+    prev_frame_time = 0
 
     def draw(points, colors):        
         pc.points = o3d.utility.Vector3dVector(points)
@@ -117,6 +118,7 @@ def main():
 
     while True:
         ret, frame = cam.read()
+        new_frame_time = time.time()
         frame = cv2.rotate(frame, cv2.ROTATE_180)[:,::-1]
         frame = cv2.flip(frame, 1).copy()
         img = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
@@ -152,6 +154,13 @@ def main():
 
         if not draw(points, colors):
            break
+
+        fps = 1/(new_frame_time-prev_frame_time) 
+        prev_frame_time = new_frame_time 
+
+        fps = 'fps: ' + str(int(fps)) 
+    
+        cv2.putText(frame, fps, (0, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (100, 255, 0), 3, cv2.LINE_AA) 
 
         cv2.imshow('Camera', frame)
 
