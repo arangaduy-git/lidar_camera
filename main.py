@@ -1,3 +1,4 @@
+import decimal
 import cv2
 import math
 from ultralytics import YOLO
@@ -20,7 +21,7 @@ def main():
     vis.add_geometry(o3d.geometry.TriangleMesh.create_coordinate_frame())
     pc = o3d.geometry.PointCloud()
     vis.add_geometry(pc)
-    zoom_coefficient = 1.39
+    threshold_clusters = 0.2
     camera_matrix = np.array( [[698.58832204 ,  0. ,        269.94691245],
     [  0.,         677.51122202, 197.87670955],
     [  0.,           0.,           1.        ]])
@@ -66,25 +67,65 @@ def main():
 
         img_cropped = img[y1:y2,x1:x2]
         return img_cropped
+    
 
+    def find_clusters(data, threshold_clusters=0.1):
+        # Преобразуем данные в numpy массив
+        data = np.array(data)
+        
+        # Функция для поиска ближайших соседей
+        def is_close(point1, point2, threshold_clusters):
+            return np.linalg.norm(point1 - point2) <= threshold_clusters
+
+        # Алгоритм кластеризации
+        clusters = []
+        visited = set()
+        for i, point in enumerate(data):
+            if i in visited:
+                continue
+            
+            # Создаём новый кластер
+            cluster = []
+            queue = [i]
+            
+            while queue:
+                idx = queue.pop(0)
+                if idx in visited:
+                    continue
+                
+                visited.add(idx)
+                cluster.append([data[idx][0], data[idx][1]])
+                
+                # Ищем соседей
+                for j, other_point in enumerate(data):
+                    if j not in visited and is_close(np.array([data[idx][0], data[idx][1]]), np.array([other_point[0], other_point[1]]), threshold_clusters):
+                        queue.append(j)
+            
+            if cluster:
+                clusters.append(np.array(cluster))
+        
+        return clusters
+    
+
+    def bounding_boxes(clusters):
+        # Определяем прямоугольники для кластеров
+        boxes = []
+        for cluster in clusters:
+            x_min, y_min = np.min(cluster, axis=0)
+            x_max, y_max = np.max(cluster, axis=0)
+            boxes.append(((x_min, y_min), (x_max, y_max)))
+        return boxes
+
+    def drange(x, y, jump):
+        x = decimal.Decimal(x)
+        while x < y:
+            yield float(x)
+            x += decimal.Decimal(jump)
 
     def scan_to_numpy_arrays(scan, boxes):
         data = []
         colors = []
-
-        for x in range(250):
-            data.append([x / 100, x / 100, 0])
-            colors.append([1, 0, 1])
-            data.append([x / 100, -x / 100, 0])
-            colors.append([1, 0, 1])
-
-        for x in range(250):
-            k1 = -(frame_width / 2 - xyxy_opr[0]) / frame_width * 2
-            k2 = (xyxy_opr[2] - frame_width / 2) / frame_width * 2
-            data.append([x / 100, x / 100 * k1, 0])
-            colors.append([1, 1, 0])
-            data.append([x / 100, x / 100 * k2, 0])
-            colors.append([1, 1, 0])
+        data_in_cam = []
 
         for i in range(0, int(len(scan)), 3):
             point = [scan[i], scan[i+1], scan[i+2]]  
@@ -99,11 +140,42 @@ def main():
                             f = True
                             break
                     if f:
+                        data_in_cam.append(point)
                         colors.append([1, 0, 0])
                     else:
                         colors.append([0, 1, 0])
                 else:
                     colors.append([0, 1, 0])
+
+        clusters = find_clusters(data_in_cam, threshold_clusters)
+        boxes_clusters = bounding_boxes(clusters)
+
+        for box in boxes_clusters:
+            for i in drange(round(box[0][0], 2), round(box[1][0], 2), 0.01):
+                data.append([i, box[0][1], 0])
+                colors.append([0, 255, 255])
+                data.append([i, box[1][1], 0])
+                colors.append([0, 255, 255])
+            for i in drange(round(box[0][1], 2), round(box[1][1], 2), 0.01):
+                data.append([box[0][0], i, 0])
+                colors.append([0, 255, 255])
+                data.append([box[1][0], i, 0])
+                colors.append([0, 255, 255])
+
+
+        for x in range(250):
+            data.append([x / 100, x / 100, 0])
+            colors.append([1, 0, 1])
+            data.append([x / 100, -x / 100, 0])
+            colors.append([1, 0, 1])
+
+        for x in range(250):
+            k1 = -(frame_width / 2 - xyxy_opr[0]) / frame_width * 2
+            k2 = (xyxy_opr[2] - frame_width / 2) / frame_width * 2
+            data.append([x / 100, x / 100 * k1, 0])
+            colors.append([1, 1, 0])
+            data.append([x / 100, x / 100 * k2, 0])
+            colors.append([1, 1, 0])
 
         if boxes:
             for h in range(len(boxes)):
