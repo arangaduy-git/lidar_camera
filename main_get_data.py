@@ -151,8 +151,9 @@ def main():
 
 
     while True:
+        frame_time = time.time()
+        cam_time = time.time()
         ret, frame = cam.read()
-        new_frame_time = time.time()
         frame = cv2.rotate(frame, cv2.ROTATE_180)[:,::-1]
         frame = cv2.flip(frame, 1).copy()
         img = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
@@ -163,7 +164,9 @@ def main():
         dst = cv2.undistort(img, camera_matrix, dist_coefs, None, newcameramtx)
         frame = cv2.cvtColor(dst, cv2.COLOR_BGR2RGB)
         dst = crop_image(frame)
+        cam_time = time.time() - cam_time
 
+        model_time = time.time()
         results = model(dst, verbose=False)[0]
         classes = results.boxes.cls.cpu().numpy()
         boxes = results.boxes.xyxy.cpu().numpy().astype(np.int32)
@@ -178,19 +181,28 @@ def main():
                     peoples_boxes.append((x1 + xyxy_opr[0] - 5, x2 + xyxy_opr[0] + 5))
         
         cv2.rectangle(frame, (xyxy_opr[0], xyxy_opr[1]), (xyxy_opr[2], xyxy_opr[3]), (255, 0, 255), 4)
+        model_time = time.time() - model_time
 
+        lidar_time = time.time()
         scan = lidar.get_scan()
         if len(scan) == 0:  
-            time.sleep(0.01)                 
+            time.sleep(0.01)
             continue
   
         scan_to_numpy_arrays(scan, peoples_boxes)
+        lidar_time = time.time() - lidar_time
 
-        fps = 1/(new_frame_time-prev_frame_time) 
-        prev_frame_time = new_frame_time 
-
-        fps = 'fps: ' + str(int(fps)) 
-        cv2.putText(frame, fps, (0, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (100, 255, 0), 3, cv2.LINE_AA) 
+        frame_time = time.time() - frame_time
+        cam_time_percent = 'cam: ' + str(int(cam_time / frame_time * 100)) + '%'
+        model_time_percent = 'model: ' + str(int(model_time / frame_time * 100)) + '%'
+        lidar_time_percent = 'lidar: ' + str(int(lidar_time / frame_time * 100)) + '%'
+        frame_time = 1 / frame_time
+        fps = 'fps: ' + str(int(frame_time))
+        
+        cv2.putText(frame, fps, (0, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (100, 255, 0), 1, cv2.LINE_AA) 
+        cv2.putText(frame, cam_time_percent, (100, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (100, 255, 0), 1, cv2.LINE_AA) 
+        cv2.putText(frame, model_time_percent, (230, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (100, 255, 0), 1, cv2.LINE_AA) 
+        cv2.putText(frame, lidar_time_percent, (380, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (100, 255, 0), 1, cv2.LINE_AA) 
 
         cv2.imshow('Camera', frame)
 
